@@ -1,0 +1,190 @@
+[
+  {
+    "hypothesis_id": "1",
+    "hypothesis_name": "Sign-in Failures (Brute Force/Bot Attacks)",
+    "hypothesis_text": "CloudTrail logs contain failed console login attempts that could indicate brute force or bot attacks",
+    "sql_query": "SELECT eventTime, sourceIPAddress, errorMessage, userIdentityuserName, awsRegion FROM cloudtrail_logs WHERE eventName = 'ConsoleLogin' AND errorMessage IS NOT NULL ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis aims to detect potential brute force or automated bot attacks by identifying failed AWS console login attempts in CloudTrail logs.",
+      "query_reasoning": "I filter on eventName='ConsoleLogin' to capture login attempts, and errorMessage IS NOT NULL to identify failures. Failed logins indicate authentication issues that could be brute force attacks or bot activity.",
+      "assumptions": [
+        "ConsoleLogin events with errorMessage indicate authentication failures",
+        "Multiple failures from same IP could indicate brute force",
+        "Error messages like 'No username found' or 'Failed authentication' are security-relevant"
+      ],
+      "confidence_score": 0.92,
+      "key_fields_used": ["eventName", "errorMessage", "sourceIPAddress", "eventTime", "userIdentityuserName"]
+    }
+  },
+  {
+    "hypothesis_id": "2",
+    "hypothesis_name": "Root Access Through Console",
+    "hypothesis_text": "Root user console login attempts can be identified in CloudTrail logs",
+    "sql_query": "SELECT eventID, eventTime, sourceIPAddress, userAgent, eventName, userIdentitytype, userIdentityarn FROM cloudtrail_logs WHERE eventName = 'ConsoleLogin' AND userIdentitytype = 'Root' ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects when the AWS root user accesses the console, which is a high-risk activity that should be monitored.",
+      "query_reasoning": "I filter on eventName='ConsoleLogin' for console access and userIdentitytype='Root' to specifically identify root user logins. Root access should be rare and closely monitored.",
+      "assumptions": [
+        "Root user logins are identified by userIdentitytype='Root'",
+        "ConsoleLogin is the primary event for console access",
+        "Root access should be minimal in secure environments"
+      ],
+      "confidence_score": 0.95,
+      "key_fields_used": ["eventName", "userIdentitytype", "sourceIPAddress", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "3",
+    "hypothesis_name": "CloudTrail Disruption",
+    "hypothesis_text": "Adversaries may attempt to disrupt CloudTrail logging to evade defenses",
+    "sql_query": "SELECT eventTime, eventName, sourceIPAddress, userIdentityuserName, userIdentityarn, awsRegion FROM cloudtrail_logs WHERE eventName IN ('StopLogging', 'DeleteTrail', 'UpdateTrail') ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects attempts to disable or modify CloudTrail logging, which attackers do to hide their activities.",
+      "query_reasoning": "I filter on specific CloudTrail management events (StopLogging, DeleteTrail, UpdateTrail) that could disrupt logging capabilities. These are critical security events.",
+      "assumptions": [
+        "StopLogging and DeleteTrail are the primary disruption methods",
+        "UpdateTrail could be used to redirect logs",
+        "These events are rare in normal operations"
+      ],
+      "confidence_score": 0.88,
+      "key_fields_used": ["eventName", "eventTime", "sourceIPAddress", "userIdentityuserName"]
+    }
+  },
+  {
+    "hypothesis_id": "4",
+    "hypothesis_name": "Unauthorized API Calls",
+    "hypothesis_text": "Unauthorized API calls (AccessDenied or UnauthorizedOperation errors) can reveal application errors or malicious activity",
+    "sql_query": "SELECT eventTime, eventName, errorCode, sourceIPAddress, userIdentityuserName, awsRegion FROM cloudtrail_logs WHERE errorCode IN ('AccessDenied', 'UnauthorizedOperation') ORDER BY eventTime DESC LIMIT 1000",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis identifies unauthorized API access attempts that could indicate misconfigurations, privilege escalation attempts, or reconnaissance activities.",
+      "query_reasoning": "I filter on errorCode IN ('AccessDenied', 'UnauthorizedOperation') to capture failed authorization attempts. These errors indicate someone trying to access resources without proper permissions.",
+      "assumptions": [
+        "AccessDenied and UnauthorizedOperation are the primary authorization failure codes",
+        "High volumes may indicate scanning or privilege escalation",
+        "Some failures are normal (application errors) but patterns matter"
+      ],
+      "confidence_score": 0.85,
+      "key_fields_used": ["errorCode", "eventName", "sourceIPAddress", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "5",
+    "hypothesis_name": "Whoami Reconnaissance",
+    "hypothesis_text": "Attackers use GetCallerIdentity API calls (similar to Unix 'whoami' command) to identify which AWS account they're using",
+    "sql_query": "SELECT eventTime, eventName, sourceIPAddress, userAgent, userIdentitytype, userIdentityarn FROM cloudtrail_logs WHERE eventName = 'GetCallerIdentity' ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects reconnaissance activity where attackers use GetCallerIdentity to understand what identity/permissions they have in a compromised account.",
+      "query_reasoning": "I filter on eventName='GetCallerIdentity' which is the AWS equivalent of 'whoami'. Frequent calls or calls from unusual IPs may indicate reconnaissance after initial compromise.",
+      "assumptions": [
+        "GetCallerIdentity is primarily used for reconnaissance",
+        "Legitimate use exists but patterns differ from malicious use",
+        "Often one of the first actions after credential compromise"
+      ],
+      "confidence_score": 0.78,
+      "key_fields_used": ["eventName", "sourceIPAddress", "userAgent", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "6",
+    "hypothesis_name": "Secrets Manager Access",
+    "hypothesis_text": "Adversaries may attempt to retrieve secrets (certificates, credentials, sensitive data) from AWS Secrets Manager",
+    "sql_query": "SELECT eventTime, eventName, sourceIPAddress, userAgent, userIdentityuserName, awsRegion FROM cloudtrail_logs WHERE eventName = 'GetSecretValue' ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects access to AWS Secrets Manager to retrieve sensitive information like database passwords, API keys, or certificates.",
+      "query_reasoning": "I filter on eventName='GetSecretValue' which is the API call to retrieve secrets. Unusual access patterns or new IPs accessing secrets warrant investigation.",
+      "assumptions": [
+        "GetSecretValue is the primary method to retrieve secrets",
+        "Legitimate applications regularly access secrets",
+        "Anomalous patterns (new IPs, unusual times, volume) indicate threats"
+      ],
+      "confidence_score": 0.82,
+      "key_fields_used": ["eventName", "sourceIPAddress", "userAgent", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "7",
+    "hypothesis_name": "Large EC2 Instance Creation",
+    "hypothesis_text": "Attackers may attempt to launch extra-large EC2 instances (10xlarge or bigger) for cryptomining or other resource-intensive activities",
+    "sql_query": "SELECT eventTime, eventName, requestParametersinstanceType, sourceIPAddress, userIdentityuserName, awsRegion FROM cloudtrail_logs WHERE eventName = 'RunInstances' AND (requestParametersinstanceType LIKE '%10xlarge%' OR requestParametersinstanceType LIKE '%12xlarge%' OR requestParametersinstanceType LIKE '%16xlarge%' OR requestParametersinstanceType LIKE '%18xlarge%' OR requestParametersinstanceType LIKE '%24xlarge%') ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects creation of very large EC2 instances that could be used for cryptocurrency mining or other unauthorized resource-intensive activities.",
+      "query_reasoning": "I filter on eventName='RunInstances' and check requestParametersinstanceType for large instance sizes (10xlarge and above). These are expensive and often targeted for cryptomining.",
+      "assumptions": [
+        "Instance types with '10xlarge' or larger indicate very large instances",
+        "Cryptominers prefer GPU or compute-optimized large instances",
+        "Legitimate use of these instances should be well-documented"
+      ],
+      "confidence_score": 0.87,
+      "key_fields_used": ["eventName", "requestParametersinstanceType", "sourceIPAddress", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "8",
+    "hypothesis_name": "S3 Bucket Brute Force",
+    "hypothesis_text": "Attackers may brute force S3 bucket names by attempting GetBucketAcl requests",
+    "sql_query": "SELECT eventTime, eventName, sourceIPAddress, userAgent, errorCode, awsRegion FROM cloudtrail_logs WHERE eventName = 'GetBucketAcl' ORDER BY eventTime DESC LIMIT 1000",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects attempts to enumerate or brute force S3 bucket names by monitoring GetBucketAcl API calls.",
+      "query_reasoning": "I filter on eventName='GetBucketAcl' which attackers use to test bucket existence and permissions. High frequency from single IPs indicates scanning.",
+      "assumptions": [
+        "GetBucketAcl is commonly used in bucket enumeration attacks",
+        "Multiple rapid calls from same IP suggest automated scanning",
+        "Mix of success and AccessDenied errors indicates brute forcing"
+      ],
+      "confidence_score": 0.79,
+      "key_fields_used": ["eventName", "sourceIPAddress", "errorCode", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "9a",
+    "hypothesis_name": "Suspicious User Agents",
+    "hypothesis_text": "CloudTrail logs contain requests from suspicious user agents (containing 'kali', 'parrot', or 'powershell') indicating potential attacker tools",
+    "sql_query": "SELECT eventTime, eventName, userAgent, sourceIPAddress, userIdentityuserName FROM cloudtrail_logs WHERE LOWER(userAgent) LIKE '%kali%' OR LOWER(userAgent) LIKE '%parrot%' OR LOWER(userAgent) LIKE '%powershell%' ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects requests from tools commonly associated with penetration testing or attacks (Kali Linux, Parrot OS, PowerShell).",
+      "query_reasoning": "I search userAgent field for suspicious strings case-insensitively. These tools are often used by attackers but rarely in legitimate AWS operations.",
+      "assumptions": [
+        "Kali and Parrot are penetration testing distributions",
+        "PowerShell in user agents may indicate automation or attacks",
+        "Legitimate uses are rare in cloud environments"
+      ],
+      "confidence_score": 0.84,
+      "key_fields_used": ["userAgent", "eventName", "sourceIPAddress", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "9b",
+    "hypothesis_name": "Suspicious User Agents",
+    "hypothesis_text": "CloudTrail logs contain requests from suspicious user agents (containing 'command/*')",
+    "sql_query": "SELECT eventTime, eventName, userAgent, sourceIPAddress, userIdentityuserName FROM cloudtrail_logs WHERE LOWER(userAgent) LIKE '%command/%' ORDER BY eventTime DESC LIMIT 1000",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects command-line tools accessing AWS which could indicate automation, scripts, or potential attacks.",
+      "query_reasoning": "I search for 'command/' pattern in userAgent which often appears in command-line HTTP libraries or custom tools.",
+      "assumptions": [
+        "User agents containing 'command/' indicate command-line tools",
+        "While CLI use is legitimate, unusual patterns warrant investigation",
+        "May indicate scripted attacks or unauthorized automation"
+      ],
+      "confidence_score": 0.72,
+      "key_fields_used": ["userAgent", "eventName", "sourceIPAddress", "eventTime"]
+    }
+  },
+  {
+    "hypothesis_id": "10",
+    "hypothesis_name": "Permanent Key Creation",
+    "hypothesis_text": "CreateAccessKey events from IAM users (not roles) can identify creation of long-term credentials",
+    "sql_query": "SELECT eventTime, eventName, userIdentityuserName, userIdentitytype, sourceIPAddress, responseElementsaccessKeyId FROM cloudtrail_logs WHERE eventName = 'CreateAccessKey' AND userIdentitytype = 'IAMUser' ORDER BY eventTime DESC",
+    "explanation": {
+      "hypothesis_interpretation": "This hypothesis detects creation of permanent AWS access keys which are less secure than temporary credentials and often targeted by attackers.",
+      "query_reasoning": "I filter on eventName='CreateAccessKey' and userIdentitytype='IAMUser' to find long-term credential creation. Best practice is to use temporary credentials from roles instead.",
+      "assumptions": [
+        "CreateAccessKey creates permanent credentials",
+        "IAM User keys are long-term vs temporary role credentials",
+        "Attackers create new keys for persistence after compromise"
+      ],
+      "confidence_score": 0.89,
+      "key_fields_used": ["eventName", "userIdentitytype", "responseElementsaccessKeyId", "eventTime"]
+    }
+  }
+]
+

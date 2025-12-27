@@ -95,10 +95,13 @@ class QueryEvaluator:
         print(f"Loading CloudTrail data from {self.data_path}...")
         self.conn = duckdb.connect(':memory:')
         
-        # Load data and create table
+        # Load data and create table with explicit type handling
+        # Some fields like userIdentityaccountId can be both numeric and string (e.g., ANONYMOUS_PRINCIPAL)
         self.conn.execute(f"""
             CREATE TABLE cloudtrail_logs AS 
-            SELECT * FROM read_csv_auto('{self.data_path}')
+            SELECT * FROM read_csv_auto('{self.data_path}', 
+                sample_size=-1,
+                all_varchar=1)
         """)
         
         # Get record count

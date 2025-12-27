@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # Query Generation Service
+  query-generator:
+    build:
+      context: .
+      target: production
+    image: threat-hunting-system:latest
+    container_name: query-generator
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./output:/app/output
+      - ../assignment:/app/assignment:ro
+    command: >
+      python main.py
+        --data /app/data/nineteenFeaturesDf.csv
+        --hypotheses /app/assignment/hypotheses.json
+        --outcomes /app/assignment/hypotheses_outcomes.json
+        --output-dir /app/output
+        --iteration 1
+    networks:
+      - threat-hunting-net
+    restart: on-failure
+
+  # Evaluation Only Service (uses existing queries)
+  evaluator:
+    build:
+      context: .
+      target: production
+    image: threat-hunting-system:latest
+    container_name: evaluator
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./output:/app/output
+      - ../assignment:/app/assignment:ro
+    command: >
+      python main.py
+        --data /app/data/nineteenFeaturesDf.csv
+        --hypotheses /app/assignment/hypotheses.json
+        --outcomes /app/assignment/hypotheses_outcomes.json
+        --output-dir /app/output
+        --skip-generation
+    networks:
+      - threat-hunting-net
+    depends_on:
+      - query-generator
+    restart: on-failure
+
+  # Development Environment with Jupyter
+  jupyter:
+    build:
+      context: .
+      target: development
+    image: threat-hunting-system:dev
+    container_name: jupyter-dev
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ../assignment:/app/assignment:ro
+    ports:
+      - "8888:8888"
+    networks:
+      - threat-hunting-net
+    command: jupyter lab --ip=0.0.0.0 --allow-root --no-browser --NotebookApp.token='' --NotebookApp.password=''
+    restart: unless-stopped
+
+  # Streamlit UI (if implemented)
+  streamlit-ui:
+    build:
+      context: .
+      target: development
+    image: threat-hunting-system:dev
+    container_name: streamlit-ui
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ../assignment:/app/assignment:ro
+    ports:
+      - "8501:8501"
+    networks:
+      - threat-hunting-net
+    command: streamlit run demo_app.py
+    restart: unless-stopped
+    profiles:
+      - ui  # Only start with --profile ui
+
+networks:
+  threat-hunting-net:
+    driver: bridge
+
+volumes:
+  data:
+  output:
+

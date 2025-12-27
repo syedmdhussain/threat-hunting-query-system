@@ -101,3 +101,7 @@ tmp/
 temp/
 *.tmp
 
+# Assignment files
+assignment.zip
+*.zip
+

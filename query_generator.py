@@ -7,10 +7,12 @@ using OpenAI's GPT-4 with chain-of-thought reasoning and self-reflection.
 
 import os
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 import openai
 from openai import OpenAI
+import duckdb
+import pandas as pd
 
 
 @dataclass
@@ -45,13 +47,14 @@ class QueryGenerator:
     - Explainable outputs
     """
     
-    def __init__(self, api_key: str = None, model: str = "gpt-4o"):
+    def __init__(self, api_key: str = None, model: str = "gpt-4o", data_path: Optional[str] = None):
         """
         Initialize the query generator.
         
         Args:
             api_key: OpenAI API key (if None, reads from environment)
             model: OpenAI model to use
+            data_path: Path to CloudTrail data file for schema introspection
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -59,7 +62,14 @@ class QueryGenerator:
         
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
-        self.schema_info = self._get_cloudtrail_schema()
+        self.data_path = data_path
+        
+        # Get actual schema from data if available, otherwise use static schema
+        if data_path and os.path.exists(data_path):
+            print(f"🔍 Introspecting schema from {data_path}...")
+            self.schema_info = self._get_dynamic_schema(data_path)
+        else:
+            self.schema_info = self._get_cloudtrail_schema()
         
     def _get_cloudtrail_schema(self) -> str:
         """Return CloudTrail schema information for query generation"""
@@ -102,6 +112,61 @@ Query Guidelines:
 - Instance type patterns like '10xlarge' or bigger should use LIKE '%xlarge%' and size filtering
 """
 
+    def _get_dynamic_schema(self, data_path: str) -> str:
+        """
+        Introspect the actual schema from the data file.
+        
+        Args:
+            data_path: Path to the CloudTrail CSV file
+            
+        Returns:
+            Schema information string with actual column names and types
+        """
+        try:
+            conn = duckdb.connect(':memory:')
+            
+            # Load a sample of the data to get schema
+            conn.execute(f"""
+                CREATE TABLE temp_schema AS 
+                SELECT * FROM '{data_path}' LIMIT 10
+            """)
+            
+            # Get schema information
+            schema_df = conn.execute("DESCRIBE temp_schema").fetchdf()
+            
+            # Build schema string
+            schema_str = "CloudTrail Dataset Schema (Actual Columns from Data):\n\n"
+            schema_str += "Available Columns:\n"
+            
+            for _, row in schema_df.iterrows():
+                col_name = row['column_name']
+                col_type = row['column_type']
+                schema_str += f"- {col_name}: {col_type}\n"
+            
+            schema_str += "\nCommon Event Names:\n"
+            schema_str += "- ConsoleLogin: User logging into AWS console\n"
+            schema_str += "- GetCallerIdentity: STS API call to get identity information\n"
+            schema_str += "- StopLogging/DeleteTrail: CloudTrail disruption attempts\n"
+            schema_str += "- RunInstances: EC2 instance creation\n"
+            schema_str += "- GetSecretValue: Secrets Manager access\n"
+            schema_str += "- CreateAccessKey: IAM access key creation\n"
+            
+            schema_str += "\nQuery Guidelines:\n"
+            schema_str += "- Use ONLY columns listed above (they exist in the actual data)\n"
+            schema_str += "- Table name is 'cloudtrail_logs'\n"
+            schema_str += "- Add LIMIT clause to prevent returning excessive results\n"
+            schema_str += "- Exclude common noise: userIdentitytype='AssumedRole' (automated services)\n"
+            schema_str += "- Exclude AWS CLI/SDK: userAgent LIKE '%aws-cli%' OR userAgent LIKE '%Boto%'\n"
+            
+            conn.close()
+            
+            print(f"✅ Schema introspected: {len(schema_df)} columns found")
+            return schema_str
+            
+        except Exception as e:
+            print(f"⚠️  Schema introspection failed: {e}. Using static schema.")
+            return self._get_cloudtrail_schema()
+
     def _build_system_prompt(self) -> str:
         """Build the system prompt for the LLM"""
         return f"""You are an expert AWS security analyst specializing in threat hunting using CloudTrail logs.
@@ -122,12 +187,18 @@ When generating queries, follow this structured approach:
 3. GENERATE THE QUERY
    - Write clean, efficient DuckDB SQL
    - Include appropriate WHERE clauses
+   - **ALWAYS add LIMIT clause** (use LIMIT 10000 to prevent excessive results)
+   - **Exclude common noise patterns:**
+     * userIdentitytype != 'AssumedRole' (unless specifically looking for service roles)
+     * NOT (userAgent LIKE '%aws-cli%' OR userAgent LIKE '%Boto%') (unless analyzing CLI usage)
+     * NOT (userAgent LIKE '%Console%' AND eventName != 'ConsoleLogin') (exclude normal console browsing)
    - Order results by eventTime when relevant
-   - Limit results if appropriate
+   - Be specific with filters to avoid over-detection
 
 4. EXPLAIN YOUR REASONING
    - Why did you structure the query this way?
    - What assumptions did you make?
+   - What noise filters did you apply?
    - How confident are you (0.0-1.0)?
 
 5. OUTPUT FORMAT

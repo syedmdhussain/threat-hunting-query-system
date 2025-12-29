@@ -111,7 +111,7 @@ def main():
         print(f"Loaded {len(generated_queries)} queries from {queries_file}")
     else:
         print("\n[STEP 2] Generating SQL queries from hypotheses...")
-        generator = QueryGenerator(model=args.model)
+        generator = QueryGenerator(model=args.model, data_path=args.data)
         query_objects = generator.generate_batch(hypotheses)
         
         # Save queries

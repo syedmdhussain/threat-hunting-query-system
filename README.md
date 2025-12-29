@@ -69,6 +69,18 @@ mv ~/Downloads/nineteenFeaturesDf.csv data/
 python3 main.py --data data/nineteenFeaturesDf.csv
 ```
 
+## 📊 Data Sources
+
+**Primary Validation:** This system was **tested and validated using the real Kaggle CloudTrail dataset** (1.9 million events from AWS production logs). All results documented in `DEMO_RESULTS.md` use real production data.
+
+**Synthetic Data Generator:** A synthetic data generator (`synthetic_data_generator.py`) is provided as a convenience for:
+- ⚡ **Quick testing** without Kaggle account (generates records in seconds)
+- 🔧 **Development** and debugging (controlled schema, no surprises)
+- 🚀 **Fast iteration** (100-1000 records vs. 1.9M records)
+- 🌍 **Accessibility** (no login barriers for reviewers/testers)
+
+**Recommendation:** Use synthetic data for quick tests, real Kaggle data for production validation.
+
 ## ⚠️ Important Note
 
 **OpenAI API Key Required:** This system uses GPT-4 to generate SQL queries. You need an active OpenAI API key with credits ($5 minimum recommended).

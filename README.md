@@ -23,7 +23,10 @@ This system addresses the challenge of automating threat hunting by:
 
 ### Prerequisites
 - Python 3.9+
-- OpenAI API key
+- **OpenAI API key with credits** (required for query generation)
+  - Get key from: https://platform.openai.com/api-keys
+  - Add credits at: https://platform.openai.com/account/billing
+  - Cost: ~$0.15-0.20 for all 11 queries
 - CloudTrail dataset (or use synthetic data generator)
 
 ### Installation
@@ -55,6 +58,12 @@ mkdir -p data
 mv ~/Downloads/nineteenFeaturesDf.csv data/
 python3 main.py --data data/nineteenFeaturesDf.csv
 ```
+
+## ⚠️ Important Note
+
+**OpenAI API Key Required:** This system uses GPT-4 to generate SQL queries. You need an active OpenAI API key with credits ($5 minimum recommended).
+
+**Alternative:** Pre-generated sample queries are included in `sample_queries.json` for testing without API credits.
 
 ## 📊 Results
 
